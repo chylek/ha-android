@@ -12,12 +12,15 @@ import io.homeassistant.companion.android.database.wear.CameraTileDao
 import io.homeassistant.companion.android.database.wear.FavoriteCachesDao
 import io.homeassistant.companion.android.database.wear.FavoritesDao
 import io.homeassistant.companion.android.database.wear.ThermostatTileDao
+import io.homeassistant.companion.android.home.MainViewModel.LoadingState
 import io.homeassistant.companion.android.testing.unit.MainDispatcherJUnit5Extension
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.time.LocalDateTime
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -87,5 +90,64 @@ class MainViewModelTest {
         assertEquals(listOf("climate.living"), uiState.climateItems.map { it.entityId })
         assertEquals(setOf("light.kitchen"), uiState.displayItems.keys)
         assertEquals(setOf("light"), uiState.allDisplayItemsByDomain.keys)
+    }
+
+    /** Makes the manager emit the given states, one flow per observation. */
+    private fun givenObservations(vararg observations: List<EntityDisplayState<EntityDisplayWithContext>>) {
+        every {
+            entitiesForDisplayManager.observeInContext(ServerManager.SERVER_ID_ACTIVE, any<(Entity) -> Boolean>())
+        } returnsMany observations.map { flowOf(*it.toTypedArray()) }
+    }
+
+    @Test
+    fun `Given the entities are not loaded yet when observing entities then they are loading`() = runTest {
+        givenObservations(listOf(EntityDisplayState.Loading))
+        val viewModel = createViewModel()
+
+        viewModel.observeEntities()
+
+        assertEquals(LoadingState.LOADING, viewModel.mainViewUiState.value.loadingState)
+    }
+
+    @Test
+    fun `Given loaded entities when observing entities then loading is ready`() = runTest {
+        givenObservations(listOf(EntityDisplayState.Loaded(listOf(fakeItem("light.kitchen")))))
+        val viewModel = createViewModel()
+
+        viewModel.observeEntities()
+
+        assertEquals(LoadingState.READY, viewModel.mainViewUiState.value.loadingState)
+    }
+
+    @Test
+    fun `Given the entities cannot be loaded when retrying then they are loaded`() = runTest {
+        givenObservations(
+            listOf(EntityDisplayState.Error),
+            listOf(EntityDisplayState.Loaded(listOf(fakeItem("light.kitchen")))),
+        )
+        val viewModel = createViewModel()
+        val observation = launch { viewModel.observeEntities() }
+
+        viewModel.mainViewUiState.first { it.loadingState == LoadingState.ERROR }
+        viewModel.retryLoadEntities()
+        observation.join()
+
+        val uiState = viewModel.mainViewUiState.value
+        assertEquals(LoadingState.READY, uiState.loadingState)
+        assertEquals(setOf("light.kitchen"), uiState.displayItems.keys)
+    }
+
+    @Test
+    fun `Given shown entities when they fail to refresh then they stay on screen`() = runTest {
+        givenObservations(
+            listOf(EntityDisplayState.Loaded(listOf(fakeItem("light.kitchen"))), EntityDisplayState.Error),
+        )
+        val viewModel = createViewModel()
+
+        viewModel.observeEntities()
+
+        val uiState = viewModel.mainViewUiState.value
+        assertEquals(LoadingState.READY, uiState.loadingState)
+        assertEquals(setOf("light.kitchen"), uiState.displayItems.keys)
     }
 }

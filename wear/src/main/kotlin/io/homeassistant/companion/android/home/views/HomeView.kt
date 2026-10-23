@@ -85,7 +85,7 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                     onEntityLongClicked = { entityId ->
                         swipeDismissableNavController.navigate("$SCREEN_ENTITY_DETAIL/$entityId")
                     },
-                    onRetryLoadEntitiesClicked = mainViewModel::loadEntities,
+                    onRetryLoadEntitiesClicked = mainViewModel::retryLoadEntities,
                     onSettingsClicked = { swipeDismissableNavController.navigate(SCREEN_SETTINGS) },
                     onNavigationClicked = { entityIdLists, order, filter ->
                         mainViewModel.setEntityListNavigation(entityIdLists, order, filter)
@@ -268,6 +268,9 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                         swipeDismissableNavController.navigateUp()
                     },
                     allowNone = false,
+                    isLoading = uiState.loadingState == MainViewModel.LoadingState.LOADING,
+                    hasError = uiState.loadingState == MainViewModel.LoadingState.ERROR,
+                    onRetryClicked = mainViewModel::retryLoadEntities,
                 )
             }
             composable(
@@ -357,6 +360,9 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                         swipeDismissableNavController.navigateUp()
                     },
                     allowNone = false,
+                    isLoading = uiState.loadingState == MainViewModel.LoadingState.LOADING,
+                    hasError = uiState.loadingState == MainViewModel.LoadingState.ERROR,
+                    onRetryClicked = mainViewModel::retryLoadEntities,
                 )
             }
             composable(
@@ -448,6 +454,9 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                         ShortcutsTile.requestUpdate(context)
                         swipeDismissableNavController.navigateUp()
                     },
+                    isLoading = uiState.loadingState == MainViewModel.LoadingState.LOADING,
+                    hasError = uiState.loadingState == MainViewModel.LoadingState.ERROR,
+                    onRetryClicked = mainViewModel::retryLoadEntities,
                 )
             }
             composable("$ROUTE_TEMPLATE_TILE/$SCREEN_SELECT_TEMPLATE_TILE") {

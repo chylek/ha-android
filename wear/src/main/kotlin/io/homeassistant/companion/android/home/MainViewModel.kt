@@ -37,6 +37,7 @@ import io.homeassistant.companion.android.database.wear.getAllFlow
 import io.homeassistant.companion.android.sensors.SensorReceiver
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -142,6 +143,8 @@ class MainViewModel @Inject constructor(
     private val _mainViewUiState = MutableStateFlow(MainViewUiState())
     val mainViewUiState = _mainViewUiState.asStateFlow()
 
+    private val entitiesRetries = Channel<Unit>(Channel.CONFLATED)
+
     private inline fun updateUiState(transform: (MainViewUiState) -> MainViewUiState) {
         _mainViewUiState.update { transform(it) }
     }
@@ -243,21 +246,14 @@ class MainViewModel @Inject constructor(
                 // Load initial state
                 updateUiState { it.copy(loadingState = LoadingState.LOADING) }
 
-                // Finished initial load, update state
+                // Only the authentication is checked here
                 val webSocketState = homePresenter.getWebSocketState()
                 if (webSocketState == WebSocketState.ClosedAuth) {
                     homePresenter.onInvalidAuthorization()
                     return@launch
                 }
-                updateUiState {
-                    it.copy(
-                        loadingState = if (webSocketState == WebSocketState.Active) {
-                            LoadingState.READY
-                        } else {
-                            LoadingState.ERROR
-                        },
-                    )
-                }
+                // The websocket connects on demand, it is not active yet. Loading ends when the entities
+                // arrive or fail to, see observeEntities.
             } catch (e: Exception) {
                 Timber.e(e, "Exception while loading entities")
                 updateUiState { it.copy(loadingState = LoadingState.ERROR) }
@@ -275,12 +271,33 @@ class MainViewModel @Inject constructor(
      * caller collects from.
      */
     suspend fun observeEntities() = withContext(Dispatchers.Default) {
+        do {
+            val failed = observeEntitiesOnce()
+            if (failed) entitiesRetries.receive()
+        } while (failed)
+    }
+
+    /** Observes the entities again, for when they couldn't be loaded. */
+    fun retryLoadEntities() {
+        updateUiState { it.copy(loadingState = LoadingState.LOADING) }
+        entitiesRetries.trySend(Unit)
+    }
+
+    /** Observes the entities until the flow ends, which tells whether it ended because they couldn't be loaded. */
+    private suspend fun observeEntitiesOnce(): Boolean {
+        var failed = false
         entitiesForDisplayManager
             .observeInContext(ServerManager.SERVER_ID_ACTIVE) {
                 it.domain in supportedDomains() || it.domain in tileDomains
             }
             .collect { state ->
+                if (state is EntityDisplayState.Error) {
+                    // Entities already shown stay on screen when they only fail to refresh
+                    failed = mainViewUiState.value.loadingState != LoadingState.READY
+                    if (failed) updateUiState { it.copy(loadingState = LoadingState.ERROR) }
+                }
                 if (state !is EntityDisplayState.Loaded) return@collect
+                failed = false
 
                 // Camera and climate entities are only for the tiles, not for the home screen
                 val items = state.entitiesById.filterValues { it.domain in supportedDomains() }
@@ -295,6 +312,7 @@ class MainViewModel @Inject constructor(
                     updateEntityDomains()
                 }
             }
+        return failed
     }
 
     /**
@@ -314,6 +332,7 @@ class MainViewModel @Inject constructor(
             val itemsByDomain = items.values.groupBy { it.domain }
             uiState.copy(
                 displayItems = items,
+                loadingState = LoadingState.READY,
                 cameraItems = tileItems.filter { it.domain == CAMERA_DOMAIN },
                 climateItems = tileItems.filter { it.domain == CLIMATE_DOMAIN },
                 allDisplayItemsByDomain = itemsByDomain,

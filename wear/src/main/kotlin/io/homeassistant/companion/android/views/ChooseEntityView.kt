@@ -1,6 +1,7 @@
 package io.homeassistant.companion.android.views
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -8,17 +9,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Text
 import androidx.wear.tooling.preview.devices.WearDevices
 import io.github.timoptr.mdiicons.Mdi
@@ -37,6 +41,13 @@ import io.homeassistant.companion.android.util.playPreviewEntityScene2
 import io.homeassistant.companion.android.util.stringForDomain
 import java.util.Locale
 
+/**
+ * List of entities, by domain, to choose one from.
+ *
+ * @param allowNone whether a button to choose no entity is shown
+ * @param isLoading whether the entities are still loading, shown as a loading indicator
+ * @param hasError whether the entities couldn't be loaded, shown with a button calling [onRetryClicked]
+ */
 @Composable
 fun ChooseEntityView(
     entitiesByDomainOrder: List<String>,
@@ -45,6 +56,9 @@ fun ChooseEntityView(
     onNoneClicked: () -> Unit,
     onEntitySelected: (entity: SimplifiedEntity) -> Unit,
     allowNone: Boolean = true,
+    isLoading: Boolean = false,
+    hasError: Boolean = false,
+    onRetryClicked: () -> Unit = {},
 ) {
     // Remember expanded state of each header
     val expandedStates = rememberExpandedStates(entitiesByDomainOrder)
@@ -54,6 +68,32 @@ fun ChooseEntityView(
         ThemeLazyColumn {
             item {
                 ListHeader(id = commonR.string.choose_entity)
+            }
+            if (hasError) {
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ListHeader(id = commonR.string.error_loading_entities)
+                        Button(
+                            label = {
+                                Text(
+                                    text = stringResource(commonR.string.retry),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            },
+                            onClick = onRetryClicked,
+                            colors = ButtonDefaults.buttonColors(),
+                        )
+                    }
+                }
+            }
+            if (isLoading) {
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ListHeader(id = commonR.string.loading)
+                        CircularProgressIndicator()
+                    }
+                }
             }
             if (allowNone) {
                 item {
